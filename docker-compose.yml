@@ -1,0 +1,15 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: seoul-meari-ai-analysis:dev
+    container_name: meari-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app        # 코드 변경 -> 즉시 반영(--reload)
+      - ./requirements.txt:/app/requirements.txt
+    env_file:
+      - .env
+    restart: unless-stopped
