@@ -3,17 +3,72 @@ import json
 import requests
 from PIL import Image
 from io import BytesIO
-from google import genai
 import boto3
 from app.core.config import settings
+from app.models.complaints import insert_complaint
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from fastapi import Depends
 
-client = genai.Client(api_key=settings.gemini_api_key)
+
+#BedRock Client 생성
+bedrock_client = boto3.client(
+    'bedrock-runtime',
+    region_name=settings.AWS_BEDROCK_REGION
+)
 
 # IAM Role을 사용하여 S3 클라이언트 생성
 s3_client = boto3.client(
     's3',
     region_name=settings.AWS_REGION
 )
+
+# S3에서 이미지 URL 목록을 가져옵니다.
+def get_s3_image_urls(limit: int = 50, prefix: str = ""):
+    """S3에서 이미지 URL 목록을 가져옵니다."""
+    try:
+        # S3 객체 목록 조회
+        response = s3_client.list_objects_v2(
+            Bucket=settings.S3_BUCKET_NAME,
+            Prefix=prefix,
+            MaxKeys=limit
+        )
+        
+        image_urls = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                key = obj['Key']
+                # 이미지 파일 확장자 필터링
+                if key.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
+                    # Presigned URL 생성
+                    url = presigned_url(key)
+                    image_urls.append({
+                        "key": key,
+                        "url": url,
+                        "last_modified": obj['LastModified'].isoformat(),
+                        "size": obj['Size']
+                    })
+        
+        return {
+            "success": True,
+            "image_urls": image_urls,
+            "count": len(image_urls)
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"S3 이미지 목록 조회 오류: {str(e)}"
+        }
+
+def presigned_url(key: str):
+    """S3 객체의 presigned URL을 생성합니다."""
+    url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.S3_BUCKET_NAME, "Key": key},
+        ExpiresIn=3600
+    )
+    return url
 
 
 def extract_gps_data(exif_data):
@@ -93,7 +148,7 @@ def extract_gps_data(exif_data):
                 lat = convert_to_degrees(gps_data['GPSLatitude'])
                 lon = convert_to_degrees(gps_data['GPSLongitude'])
                 print(f"변환된 위도: {lat}, 경도: {lon}")
-                
+            
                 # N/S, E/W 참조에 따라 부호 결정
                 if gps_data.get('GPSLatitudeRef') == 'S':
                     lat = -lat
@@ -223,110 +278,123 @@ def get_image_metadata_from_url(image_url: str):
             "error": f"이미지 처리 오류: {str(e)}"
         }
 
-def save_location_data(gps_data: dict, image_url: str):
-    """위치 데이터를 데이터베이스에 저장합니다."""
-    try:
-        # 여기에 데이터베이스 저장 로직을 추가할 수 있습니다
-        # 예: PostgreSQL, MongoDB 등
-        
-        location_record = {
-            "image_url": image_url,
-            "latitude": gps_data.get('latitude_decimal'),
-            "longitude": gps_data.get('longitude_decimal'),
-            "coordinates": gps_data.get('coordinates'),
-            "altitude": gps_data.get('GPSAltitude'),
-            "speed": gps_data.get('GPSSpeed'),
-            "direction": gps_data.get('GPSImgDirection'),
-            "timestamp": gps_data.get('GPSTimeStamp'),
-            "created_at": "now()"  # 실제로는 현재 시간
+def analyze_image(image_urls: list, save_location: bool = True, db: Session = None):
+    # 이미지 메타데이터 추출 (URL과 1대1 매핑)
+    image_data_list = []
+    image_urls_list = []
+    for image_url in image_urls:
+        metadata_result = get_image_metadata_from_url(image_url)
+        metadata = metadata_result.get("metadata") if metadata_result["success"] else None
+        image_urls_list.append(image_url)
+        # URL과 메타데이터를 함께 저장
+        image_data = {
+            "url": image_url,
+            "metadata": metadata,
+            "gps_data": None
         }
         
-        # TODO: 실제 데이터베이스 저장 구현
-        print(f"위치 데이터 저장: {location_record}")
+        # GPS 데이터 변환 (있는 경우)
+        if metadata and "gps" in metadata:
+            gps_raw = metadata["gps"]
+            
+            def parse_fraction(value):
+                """분수 문자열을 float로 변환합니다."""
+                if value is None:
+                    return None
+                if isinstance(value, str) and '/' in value:
+                    numerator, denominator = value.split('/')
+                    return float(numerator) / float(denominator)
+                return float(value) if value is not None else None
+            
+            def format_timestamp(value):
+                """타임스탬프를 문자열로 변환합니다."""
+                if value is None:
+                    return None
+                if isinstance(value, (list, tuple)):
+                    return f"{value[0]}:{value[1]}:{value[2]}"
+                return str(value)
+            
+            gps_data = {
+                "latitude_decimal": gps_raw.get("latitude_decimal"),
+                "longitude_decimal": gps_raw.get("longitude_decimal"),
+                "coordinates": gps_raw.get("coordinates"),
+                "altitude": parse_fraction(gps_raw.get("GPSAltitude")),
+                "speed": parse_fraction(gps_raw.get("GPSSpeed")),
+                "direction": parse_fraction(gps_raw.get("GPSImgDirection")),
+                "timestamp": format_timestamp(gps_raw.get("GPSTimeStamp"))
+            }
+            image_data["gps_data"] = gps_data
         
-        return {
-            "success": True,
-            "message": "위치 데이터가 저장되었습니다.",
-            "location_id": "generated_id"  # 실제로는 생성된 ID
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"위치 데이터 저장 오류: {str(e)}"
-        }
-
-def analyze_image(image_url: str, save_location: bool = True):
-    # 이미지 메타데이터 추출
-    metadata_result = get_image_metadata_from_url(image_url)
-    metadata = metadata_result.get("metadata") if metadata_result["success"] else None
+        image_data_list.append(image_data)
     
-    # GPS 데이터 추출 (API 응답에서 gps_data 사용)
-    gps_data = None
-    if metadata and "gps" in metadata:
-        # API 응답과 동일한 방식으로 GPS 데이터 매핑
-        gps_raw = metadata["gps"]
-        
-        def parse_fraction(value):
-            """분수 문자열을 float로 변환합니다."""
-            if value is None:
-                return None
-            if isinstance(value, str) and '/' in value:
-                numerator, denominator = value.split('/')
-                return float(numerator) / float(denominator)
-            return float(value) if value is not None else None
-        
-        def format_timestamp(value):
-            """타임스탬프를 문자열로 변환합니다."""
-            if value is None:
-                return None
-            if isinstance(value, (list, tuple)):
-                return f"{value[0]}:{value[1]}:{value[2]}"
-            return str(value)
-        
-        gps_data = {
-            "latitude_decimal": gps_raw.get("latitude_decimal"),
-            "longitude_decimal": gps_raw.get("longitude_decimal"),
-            "coordinates": gps_raw.get("coordinates"),
-            "altitude": parse_fraction(gps_raw.get("GPSAltitude")),
-            "speed": parse_fraction(gps_raw.get("GPSSpeed")),
-            "direction": parse_fraction(gps_raw.get("GPSImgDirection")),
-            "timestamp": format_timestamp(gps_raw.get("GPSTimeStamp"))
-        }
-    
+    # 편의를 위해 기존 변수명 유지
+    metadata = [data["metadata"] for data in image_data_list]
+    gps_data = [data["gps_data"] for data in image_data_list]
     # 위치 데이터가 있고 저장 옵션이 활성화된 경우 저장
     location_saved = None
-    if gps_data and save_location:
-        location_result = save_location_data(gps_data, image_url)
-        location_saved = location_result
-    
+    image_urls_list_text = "\n".join(image_urls_list)
     # AI 이미지 분석
-    resp = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
+    resp = bedrock_client.converse(
+        modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+        messages=[
             {
-                image_url,
-                """ 당신은 도시 환경 데이터용 비전 분석가입니다. 
-                    목표: 이미지에 '무단투기 의심 쓰레기봉투'가 있는지 판별하고, 아래 JSON 스키마로만 답하십시오.
-                    판별 규칙(요지):
-                    - '쓰레기봉투'는 내용물이 든 봉투형 포장(비닐/플라스틱)이 바닥/길가/전봇대 주변 등에 놓인 상태를 말합니다.
-                    - 합법 배출 요소(예: 공식 스티커, 지정된 수거함/배출장소 내부)는 무단투기에서 제외합니다.
-                    - 혼동 주의: 쇼핑백, 비닐 포장, 의류 가방, 검은 그림자/반사, 개 배설물 봉투 디스펜서, 건축 폐포 자루 등.
-
-                    응답 형식:
-                    - 반드시 'JSON만' 출력합니다. 여는 중괄호로 시작해 닫는 중괄호로 끝나야 합니다.
+                "role": "user",
+                "content":[
                     {
-                        "type": "image_url",
-                        "tag" : "trash_bag",
-                        "image_url": "쓰레기 봉투가 있는 이미지 url"
+                        "text": f"""당신은 도시 환경 데이터용 자동 민원 생성기입니다. 
+목표: 이미지들에서 '무단투기 의심 쓰레기봉투'나 '포트홀'이 있는지 판별하고, 아래 JSON 스키마로만 답하십시오.
+결과물은 입력된 순서대로 순차적으로 출력합니다.
+
+분석할 이미지 목록:
+{image_urls_list_text}
+
+판별 규칙(요지):
+- 만약 '무단투기 의심 쓰레기봉투'라면 tag는 'trash_bag'입니다.
+- 만약 '포트홀'이라면 tag는 'port_hole'입니다.
+- '쓰레기봉투'는 내용물이 든 봉투형 포장(비닐/플라스틱)이 바닥/길가/전봇대 주변 등에 놓인 상태를 말합니다.
+- 합법 배출 요소(예: 공식 스티커, 지정된 수거함/배출장소 내부)는 무단투기에서 제외합니다.
+- 혼동 주의: 쇼핑백, 비닐 포장, 의류 가방, 검은 그림자/반사, 개 배설물 봉투 디스펜서, 건축 폐포 자루 등.
+- 포트홀은 도로 주변에 있는 포트홀을 말합니다.
+- danger에는 해당 민원에 대한 위험성을 말합니다.
+- solution에는 해당 민원에 대한 권장조치를 말합니다.
+- detail에는 해당 민원에 대한 상세 설명을 말합니다.
+
+응답 형식:
+- 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 합니다.
+[
+    {{
+        "tag": "trash_bag",
+        "image_url": "쓰레기 봉투가 있는 이미지 url",
+        "detail": "해당 민원에 대한 상세 설명",
+        "danger": "해당 민원에 대한 위험성",
+        "solution": "해당 민원에 대한 권장조치"
+    }},
+    {{
+        "tag": "port_hole",
+        "image_url": "포트홀이 있는 이미지 url",
+        "detail": "해당 민원에 대한 상세 설명",
+        "danger": "해당 민원에 대한 위험성",
+        "solution": "해당 민원에 대한 권장조치"
+    }}
+]"""
                     }
-                    """
+                ]
             },
         ],
     )
-
+    print(resp)
+    # BedRock 응답에서 텍스트 추출
+    try:
+        out_blocks = resp["output"]["message"]["content"]
+        response_text = "".join(block["text"] for block in out_blocks if "text" in block)
+    except (KeyError, IndexError) as e:
+        return {
+            "type": "error",
+            "message": f"BedRock 응답 파싱 오류: {str(e)}",
+            "metadata": metadata
+        }
+    
     # response에서 ```json 또는 ```로 시작하는 부분과 ```로 끝나는 부분을 모두 제거
-    response_text = resp.text.strip()
     response_text = re.sub(r"^```json\s*|^```\s*|```$", "", response_text, flags=re.MULTILINE)
     if not response_text:
         return {
@@ -334,18 +402,65 @@ def analyze_image(image_url: str, save_location: bool = True):
             "message": "AI가 응답을 생성하지 못했습니다.",
             "metadata": metadata
         }
+    
     try:
-        response = json.loads(response_text)
-        # 메타데이터 추가
-        if metadata:
-            response["metadata"] = metadata
-        # GPS 데이터 추가
-        if gps_data:
-            response["gps_data"] = gps_data
-        # 위치 저장 정보 추가
-        if location_saved:
-            response["location_saved"] = location_saved
-        return response
+        # JSON 배열로 파싱
+        responses = json.loads(response_text)
+        
+        # 결과를 저장할 리스트
+        final_results = []
+        saved_complaints = []
+        
+        for response in responses:
+            image_url = response.get("image_url")
+            if image_url:
+                # 해당 URL의 이미지 데이터 찾기
+                for image_data in image_data_list:
+                    if image_data["url"] == image_url:
+                        # GPS 데이터 안전하게 추출
+                        gps_data = image_data.get("gps_data")
+                        
+                        final_result = {
+                            "tag": response.get("tag"),
+                            "image_url": image_url,
+                            "detail": response.get("detail"),
+                            "danger": response.get("danger"),
+                            "solution": response.get("solution"),
+                            "gps_data": gps_data,
+                            "metadata": image_data.get("metadata")
+                        }
+                        final_results.append(final_result)
+                        
+                        # DB에 민원 저장 (db가 제공된 경우)
+                        if db and gps_data:
+                            try:
+                                latitude = gps_data.get("latitude_decimal")
+                                longitude = gps_data.get("longitude_decimal")
+                                altitude = gps_data.get("altitude")
+                                speed = gps_data.get("speed")
+                                direction = gps_data.get("direction")
+                                timestamp = gps_data.get("timestamp")
+                                
+                                complaint_result = insert_complaint(
+                                    db, latitude, longitude, 0, altitude, 0, 
+                                    direction, timestamp, image_url, 
+                                    response.get("danger"), response.get("solution"), 
+                                    response.get("detail")
+                                )
+                                saved_complaints.append(complaint_result)
+                            except Exception as e:
+                                print(f"민원 저장 오류: {e}")
+                        break
+        
+        return {
+            "success": True,
+            "results": final_results,
+            "total_count": len(image_data_list),
+            "detected_count": len(final_results),
+            "saved_complaints": len(saved_complaints),
+            "metadata": metadata
+        }
+            
     except json.JSONDecodeError as e:
         # JSON 파싱 실패 시 기본 응답 반환
         return {
@@ -355,4 +470,70 @@ def analyze_image(image_url: str, save_location: bool = True):
             "metadata": metadata,
             "gps_data": gps_data,
             "location_saved": location_saved
+        }
+
+def batch_analyze_images(limit: int = 50, prefix: str = "", save_location: bool = True, db: Session = None):
+    """S3에서 이미지들을 목록으로 분석"""
+    try:
+        # S3에서 이미지 URL 목록 가져오기
+        s3_result = get_s3_image_urls(limit, prefix)
+        if not s3_result["success"]:
+            return s3_result
+        
+        image_urls = s3_result["image_urls"]
+        if not image_urls:
+            return {
+                "success": True,
+                "message": "분석할 이미지가 없습니다.",
+                "results": [],
+                "total_count": 0,
+                "success_count": 0,
+                "error_count": 0
+            }
+        
+        # URL 리스트 추출
+        image_url_list = [img["url"] for img in image_urls]
+        
+        # 배치 분석 실행
+        analysis_result = analyze_image(image_url_list, save_location, db)
+        
+        # S3 정보를 결과에 추가
+        if analysis_result.get("success") and "results" in analysis_result:
+            for i, result in enumerate(analysis_result["results"]):
+                if i < len(image_urls):
+                    result["s3_info"] = {
+                        "key": image_urls[i]["key"],
+                        "last_modified": image_urls[i]["last_modified"],
+                        "size": image_urls[i]["size"]
+                    }
+        
+        return analysis_result
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"배치 분석 오류: {str(e)}"
+        }
+
+def analyze_and_save_db_test(image_urls: list[str], db: Session = None):
+    """여러 이미지 URL을 분석하고 DB에 저장하는 테스트 함수"""
+    try:
+        # 이미지 분석 실행
+        analysis_result = analyze_image(image_urls, save_location=True, db=db)
+        
+        if analysis_result.get("success"):
+            return {
+                "success": True,
+                "message": f"{len(image_urls)}개 이미지 분석 완료",
+                "total_images": len(image_urls),
+                "detected_complaints": analysis_result.get("detected_count", 0),
+                "saved_complaints": analysis_result.get("saved_complaints", 0),
+                "results": analysis_result.get("results", [])
+            }
+        else:
+            return analysis_result
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"분석 및 저장 오류: {str(e)}"
         }
