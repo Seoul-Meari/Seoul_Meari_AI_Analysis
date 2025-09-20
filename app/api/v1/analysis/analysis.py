@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Query
 from app.services import analysis_service
-from app.schemas.analysis import ImageAnalysisRequest, ImageMetadataResponse
+from app.schemas.analysis import ImageAnalysisRequest, ImageMetadataResponse, BatchImageAnalysisRequest
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from fastapi import Depends
 
 router = APIRouter()
 
@@ -54,5 +57,27 @@ def get_image_metadata(image_url: str):
     return result
 
 @router.post("/analyze-image")
-def analyze_image(request: ImageAnalysisRequest, save_location: bool = Query(True, description="위치 데이터 저장 여부")):
-    return analysis_service.analyze_image(request.image_url, save_location)
+def analyze_image(request: ImageAnalysisRequest, save_location: bool = Query(True, description="위치 데이터 저장 여부"), db: Session = Depends(get_db)):
+    return analysis_service.analyze_image([request.image_url], save_location, db)
+
+@router.get("/s3-images")
+def get_s3_images(limit: int = Query(50, description="가져올 이미지 개수"), prefix: str = Query("", description="S3 키 prefix 필터")):
+    """S3에서 이미지 목록을 가져옵니다."""
+    return analysis_service.get_s3_image_urls(limit, prefix)
+
+@router.post("/batch-analyze")
+def batch_analyze(
+    limit: int = Query(50, description="분석할 이미지 개수"), 
+    prefix: str = Query("", description="S3 키 prefix 필터"),
+    save_location: bool = Query(True, description="위치 데이터 저장 여부"),
+    db: Session = Depends(get_db)
+):
+    """S3에서 이미지들을 배치로 분석합니다."""
+    return analysis_service.batch_analyze_images(limit, prefix, save_location, db)
+
+@router.post("/analyze-and-save-db-test")
+def analyze_and_save_db_test(
+    request: BatchImageAnalysisRequest,
+    db: Session = Depends(get_db)
+):
+    return analysis_service.analyze_and_save_db_test(request.image_urls, db)

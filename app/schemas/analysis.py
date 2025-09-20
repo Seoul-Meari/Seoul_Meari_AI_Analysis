@@ -4,6 +4,9 @@ from typing import Optional, Dict, Any
 class ImageAnalysisRequest(BaseModel):
     image_url: str
 
+class BatchImageAnalysisRequest(BaseModel):
+    image_urls: list[str]
+
 class GPSData(BaseModel):
     latitude_decimal: Optional[float] = None
     longitude_decimal: Optional[float] = None
