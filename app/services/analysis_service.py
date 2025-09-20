@@ -4,12 +4,12 @@ import requests
 from PIL import Image
 from io import BytesIO
 import boto3
+from botocore.config import Config
 from app.core.config import settings
 from app.models.complaints import insert_complaint
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from fastapi import Depends
-
 
 #BedRock Client 생성
 bedrock_client = boto3.client(
@@ -20,38 +20,84 @@ bedrock_client = boto3.client(
 # IAM Role을 사용하여 S3 클라이언트 생성
 s3_client = boto3.client(
     's3',
-    region_name=settings.AWS_REGION
+    region_name=settings.AWS_REGION,
+    # Access key를 사용하여 접속, 실제 배포시에는 IAM Role을 사용하여 접속
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    config=Config(
+        signature_version="s3v4",
+        s3={
+            'addressing_style': 'virtual'
+        }
+    )
 )
 
 # S3에서 이미지 URL 목록을 가져옵니다.
-def get_s3_image_urls(limit: int = 50, prefix: str = ""):
+def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, end_key: str = None):
     """S3에서 이미지 URL 목록을 가져옵니다."""
     try:
-        # S3 객체 목록 조회
-        response = s3_client.list_objects_v2(
-            Bucket=settings.S3_BUCKET_NAME,
-            Prefix=prefix,
-            MaxKeys=limit
-        )
-        
         image_urls = []
-        if 'Contents' in response:
+        continuation_token = None
+        
+        while True:
+            # S3 객체 목록 조회 (페이지네이션)
+            params = {
+                'Bucket': settings.S3_BUCKET_NAME,
+                'Prefix': prefix,
+                'MaxKeys': 1000  # 한 번에 많이 가져오기
+            }
+            
+            if continuation_token: 
+                params['ContinuationToken'] = continuation_token
+                
+            response = s3_client.list_objects_v2(**params)
+            
+            if 'Contents' not in response:
+                break
+                
             for obj in response['Contents']:
                 key = obj['Key']
+                
+                # 키에서 시간 부분만 추출 (upload_image/20250916/100000_객체이름.png -> 100000)
+                key_parts = key.split('/')
+                if len(key_parts) >= 3:
+                    time_key = key_parts[2].split('_')[0]  # 시간 부분만 (100000)
+                else:
+                    time_key = key
+                # 시간 범위 필터링
+                if start_key and time_key < start_key:
+                    continue
+                if end_key and time_key > end_key:
+                    continue
                 # 이미지 파일 확장자 필터링
                 if key.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
                     # Presigned URL 생성
                     url = presigned_url(key)
+                    print(f"url: {url}")
                     image_urls.append({
                         "key": key,
                         "url": url,
                         "last_modified": obj['LastModified'].isoformat(),
                         "size": obj['Size']
                     })
+                    
+                    # limit 체크
+                    if len(image_urls) >= limit:
+                        break
+            
+            # limit 도달 시 중단
+            if len(image_urls) >= limit:
+                break
+                
+            # 다음 페이지 확인
+            if 'NextContinuationToken' in response:
+                continuation_token = response['NextContinuationToken']
+            else:
+                break
         
         return {
             "success": True,
-            "image_urls": image_urls,
+            "image_urls": image_urls[:limit],  # limit만큼만 반환
             "count": len(image_urls)
         }
         
@@ -292,7 +338,6 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
             "metadata": metadata,
             "gps_data": None
         }
-        
         # GPS 데이터 변환 (있는 경우)
         if metadata and "gps" in metadata:
             gps_raw = metadata["gps"]
@@ -333,6 +378,7 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
     # 위치 데이터가 있고 저장 옵션이 활성화된 경우 저장
     location_saved = None
     image_urls_list_text = "\n".join(image_urls_list)
+    print(f"image_urls_list_text: {image_urls_list_text}")
     # AI 이미지 분석
     resp = bedrock_client.converse(
         modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
@@ -436,8 +482,8 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                             try:
                                 latitude = gps_data.get("latitude_decimal")
                                 longitude = gps_data.get("longitude_decimal")
+                                coordinates = gps_data.get("coordinates")
                                 altitude = gps_data.get("altitude")
-                                speed = gps_data.get("speed")
                                 direction = gps_data.get("direction")
                                 timestamp = gps_data.get("timestamp")
                                 
@@ -472,11 +518,11 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
             "location_saved": location_saved
         }
 
-def batch_analyze_images(limit: int = 50, prefix: str = "", save_location: bool = True, db: Session = None):
+def batch_analyze_images(limit: int = 50, prefix: str = "", start_key: str = None, end_key: str = None, save_location: bool = True, db: Session = None):
     """S3에서 이미지들을 목록으로 분석"""
     try:
         # S3에서 이미지 URL 목록 가져오기
-        s3_result = get_s3_image_urls(limit, prefix)
+        s3_result = get_s3_image_urls(limit, prefix, start_key, end_key)
         if not s3_result["success"]:
             return s3_result
         
@@ -495,6 +541,7 @@ def batch_analyze_images(limit: int = 50, prefix: str = "", save_location: bool 
         image_url_list = [img["url"] for img in image_urls]
         
         # 배치 분석 실행
+        print(f"image_url_list: {image_url_list}")
         analysis_result = analyze_image(image_url_list, save_location, db)
         
         # S3 정보를 결과에 추가
