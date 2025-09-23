@@ -36,11 +36,11 @@ def batch_analyze_job():
     except Exception as e:
         print(f"배치 분석 오류: {e}")
 
-# 3시간마다 실행하는 작업 추가
+# 1시간마다 실행하는 작업 추가
 def init_jobs():
     scheduler.add_job(
         batch_analyze_job,
-        trigger=IntervalTrigger(minutes=15, timezone=ZoneInfo('Asia/Seoul')), 
+        trigger=IntervalTrigger(hours=1, timezone=ZoneInfo('Asia/Seoul')), 
         id='batch_analyze_job',
         name='S3 이미지 배치 분석',
         replace_existing=True,

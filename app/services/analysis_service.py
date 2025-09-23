@@ -38,7 +38,6 @@ def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, 
     try:
         image_urls = []
         continuation_token = None
-        
         while True:
             # S3 객체 목록 조회 (페이지네이션)
             params = {
@@ -51,20 +50,29 @@ def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, 
                 params['ContinuationToken'] = continuation_token
                 
             response = s3_client.list_objects_v2(**params)
-            
+            # print(f"response : {response}")
             if 'Contents' not in response:
                 break
-                
             for obj in response['Contents']:
                 key = obj['Key']
                 
-                # 키에서 시간 부분만 추출 (upload_image/20250916/100000_객체이름.png -> 100000)
+                # 디렉터리 키는 건너뛰기
+                if key.endswith('/'):
+                    continue
+                
+                # 키에서 시간 부분만 추출 (upload_image/20250916/001240_객체태그_고유이름.png -> 001240)
                 key_parts = key.split('/')
-                if len(key_parts) >= 3:
-                    time_key = key_parts[2].split('_')[0]  # 시간 부분만 (100000)
+                # print(f"key_parts : {key_parts}")
+                
+                if len(key_parts) >= 3 and key_parts[2]:  # 빈 문자열 체크 추가
+                    time_key = key_parts[2].split('_')[0]  # 시간 부분만 (001240)
+                    tag = key_parts[2].split('_')[1] if len(key_parts[2].split('_')) > 1 else None
                 else:
-                    time_key = key
+                    continue  # 유효하지 않은 키는 건너뛰기
+                
                 # 시간 범위 필터링
+                print(f"time_key: {time_key}")
+                print(f"tag : {tag}")
                 if start_key and time_key < start_key:
                     continue
                 if end_key and time_key > end_key:
@@ -76,7 +84,7 @@ def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, 
                     print(f"url: {url}")
                     image_urls.append({
                         "key": key,
-                        "url": url,
+                        "url": f"{tag} : {url}",
                         "last_modified": obj['LastModified'].isoformat(),
                         "size": obj['Size']
                     })
@@ -94,7 +102,7 @@ def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, 
                 continuation_token = response['NextContinuationToken']
             else:
                 break
-        
+        # print(f"image_urls : {image_urls}")
         return {
             "success": True,
             "image_urls": image_urls[:limit],  # limit만큼만 반환
@@ -333,9 +341,11 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
         metadata = metadata_result.get("metadata") if metadata_result["success"] else None
         image_urls_list.append(image_url)
         # URL과 메타데이터를 함께 저장
+        tag = image_url.split(" : ")[0]
         image_data = {
             "url": image_url,
             "metadata": metadata,
+            "tag" : tag,
             "gps_data": None
         }
         # GPS 데이터 변환 (있는 경우)
@@ -387,36 +397,33 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                 "role": "user",
                 "content":[
                     {
-                        "text": f"""당신은 도시 환경 데이터용 자동 민원 생성기입니다. 
-목표: 이미지들에서 '무단투기 의심 쓰레기봉투'나 '포트홀'이 있는지 판별하고, 아래 JSON 스키마로만 답하십시오.
-결과물은 입력된 순서대로 순차적으로 출력합니다.
+                        "text": f"""너는 도시 환경 데이터용 자동 민원 생성기다. 
+목표: 이미지들의 태그를 참조해서 url을 분석하고 자세한설명, 위험도, 해결방법을 알려줘.
+결과물은 입력된 순서대로 순차적으로 출력해. 입력은 태그 : url과 같은 형식으로 입력돼
+출력할때는 태그 정보는 빼고 url만 출력해
 
 분석할 이미지 목록:
 {image_urls_list_text}
 
 판별 규칙(요지):
-- 만약 '무단투기 의심 쓰레기봉투'라면 tag는 'trash_bag'입니다.
-- 만약 '포트홀'이라면 tag는 'port_hole'입니다.
 - '쓰레기봉투'는 내용물이 든 봉투형 포장(비닐/플라스틱)이 바닥/길가/전봇대 주변 등에 놓인 상태를 말합니다.
 - 합법 배출 요소(예: 공식 스티커, 지정된 수거함/배출장소 내부)는 무단투기에서 제외합니다.
 - 혼동 주의: 쇼핑백, 비닐 포장, 의류 가방, 검은 그림자/반사, 개 배설물 봉투 디스펜서, 건축 폐포 자루 등.
 - 포트홀은 도로 주변에 있는 포트홀을 말합니다.
-- danger에는 해당 민원에 대한 위험성을 말합니다.
-- solution에는 해당 민원에 대한 권장조치를 말합니다.
-- detail에는 해당 민원에 대한 상세 설명을 말합니다.
+- danger에는 해당 민원에 대한 위험성을 말한다
+- solution에는 해당 민원에 대한 권장조치를 말한다.
+- detail에는 해당 민원에 대한 상세 설명을 말한다.
 
 응답 형식:
-- 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 합니다.
+- 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 해.
 [
     {{
-        "tag": "trash_bag",
         "image_url": "쓰레기 봉투가 있는 이미지 url",
         "detail": "해당 민원에 대한 상세 설명",
         "danger": "해당 민원에 대한 위험성",
         "solution": "해당 민원에 대한 권장조치"
     }},
     {{
-        "tag": "port_hole",
         "image_url": "포트홀이 있는 이미지 url",
         "detail": "해당 민원에 대한 상세 설명",
         "danger": "해당 민원에 대한 위험성",
@@ -460,14 +467,17 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
         for response in responses:
             image_url = response.get("image_url")
             if image_url:
+                # BedRock 응답에서 실제 URL 추출
+                actual_url = image_url.split(" : ", 1)[1] if " : " in image_url else image_url
+                
                 # 해당 URL의 이미지 데이터 찾기
                 for image_data in image_data_list:
-                    if image_data["url"] == image_url:
+                    if image_data["url"] == actual_url:
                         # GPS 데이터 안전하게 추출
                         gps_data = image_data.get("gps_data")
                         
                         final_result = {
-                            "tag": response.get("tag"),
+                            "tag": image_data["tag"],
                             "image_url": image_url,
                             "detail": response.get("detail"),
                             "danger": response.get("danger"),
@@ -491,7 +501,8 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                                     db, latitude, longitude, 0, altitude, 0, 
                                     direction, timestamp, image_url, 
                                     response.get("danger"), response.get("solution"), 
-                                    response.get("detail")
+                                    response.get("detail"),
+                                    image_data["tag"]
                                 )
                                 saved_complaints.append(complaint_result)
                             except Exception as e:
