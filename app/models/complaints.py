@@ -13,11 +13,12 @@ class Complaint(Base):
     coordinates  = Column(Float)
     direction    = Column(Float)
     timestamp    = Column(DateTime(timezone=True))
-    image_url    = Column(Text)
+    S3_url       = Column(Text)
     danger       = Column(Text)
     solution     = Column(Text)
     detail       = Column(Text)
     is_confirmed = Column(Boolean)
+    tag          = Column(Text)
 
 def insert_complaint(db, latitude, longitude, accuracy, altitude, coordinates, direction, timestamp, S3_url, danger, solution, detail, tag):
     row = Complaint(

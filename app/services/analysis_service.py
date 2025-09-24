@@ -21,9 +21,6 @@ bedrock_client = boto3.client(
 s3_client = boto3.client(
     's3',
     region_name=settings.AWS_REGION,
-    # Access key를 사용하여 접속, 실제 배포시에는 IAM Role을 사용하여 접속
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
     config=Config(
         signature_version="s3v4",
         s3={
@@ -492,7 +489,6 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                             try:
                                 latitude = gps_data.get("latitude_decimal")
                                 longitude = gps_data.get("longitude_decimal")
-                                coordinates = gps_data.get("coordinates")
                                 altitude = gps_data.get("altitude")
                                 direction = gps_data.get("direction")
                                 timestamp = gps_data.get("timestamp")

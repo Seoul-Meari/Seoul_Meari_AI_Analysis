@@ -4,6 +4,7 @@ from app.schemas.analysis import ImageAnalysisRequest, ImageMetadataResponse, Ba
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from fastapi import Depends
+from sqlalchemy import text
 
 router = APIRouter()
 
@@ -11,6 +12,14 @@ router = APIRouter()
 @router.get("/")
 def root():
     return {"ok": True}
+
+@router.get("/health/db")
+def health_db(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"ok": True, "db": "connected"}
+    except Exception as e:
+        return {"ok": False, "db": "error", "error": str(e)}
 
 @router.get("/image-metadata", response_model=ImageMetadataResponse)
 def get_image_metadata(image_url: str):
