@@ -334,13 +334,20 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
     image_data_list = []
     image_urls_list = []
     for image_url in image_urls:
-        metadata_result = get_image_metadata_from_url(image_url)
-        metadata = metadata_result.get("metadata") if metadata_result["success"] else None
-        image_urls_list.append(image_url)
+        # 입력이 "태그 : URL" 형식일 수 있으므로 실제 URL과 태그를 분리
+        original_input = image_url
+        actual_input_url = original_input.split(" : ", 1)[1] if " : " in original_input else original_input
+        tag = original_input.split(" : ")[0]
+
+        # 메타데이터는 실제 URL로 조회
+        metadata_result = get_image_metadata_from_url(actual_input_url)
+        metadata = metadata_result.get("metadata") if metadata_result.get("success") else None
+
+        # 프롬프트에는 원본 형식 유지(태그:URL), 내부 매칭은 실제 URL 기준
+        image_urls_list.append(original_input)
         # URL과 메타데이터를 함께 저장
-        tag = image_url.split(" : ")[0]
         image_data = {
-            "url": image_url,
+            "url": actual_input_url,
             "metadata": metadata,
             "tag" : tag,
             "gps_data": None
