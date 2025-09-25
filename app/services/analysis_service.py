@@ -519,7 +519,7 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                                     direction, timestamp, image_url,
                                     response.get("danger"), response.get("solution"),
                                     response.get("detail"),
-                                    image_data["tag"],"11111111-1111-1111-1111-111111111111"
+                                    image_data["tag"]
                                 )
                                 saved_complaints.append(complaint_result)
                             except Exception as e:
