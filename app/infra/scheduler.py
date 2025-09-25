@@ -23,12 +23,12 @@ def batch_analyze_job():
             now = datetime.now(ZoneInfo('Asia/Seoul'))
             one_hour_ago = now - timedelta(hours=1)
             
-            # 디렉터리 prefix (날짜만)
-            date_prefix = now.strftime("upload_image/%Y%m%d")
-            
             # 키 범위 설정 (UTC 보정: 9시간 감소)
             adj_one_hour_ago = one_hour_ago - timedelta(hours=9)
             adj_now = now - timedelta(hours=9)
+            
+            # 디렉터리 prefix (보정된 날짜 기준)
+            date_prefix = adj_now.strftime("upload_image/%Y%m%d")
             start_key = adj_one_hour_ago.strftime("%H%M%S")
             end_key = adj_now.strftime("%H%M%S")
             
