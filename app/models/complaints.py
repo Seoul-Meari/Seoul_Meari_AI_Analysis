@@ -19,8 +19,9 @@ class Complaint(Base):
     detail       = Column(Text)
     is_confirmed = Column(Boolean)
     tag          = Column(Text)
+    admin_id = Column(UUID(as_uuid=True), nullable=True)
 
-def insert_complaint(db, latitude, longitude, accuracy, altitude, coordinates, direction, timestamp, S3_url, danger, solution, detail, tag, admin_id):
+def insert_complaint(db, latitude, longitude, accuracy, altitude, coordinates, direction, timestamp, S3_url, danger, solution, detail, tag):
     row = Complaint(
         complaint_id=uuid4(),
         latitude=latitude,
@@ -36,7 +37,7 @@ def insert_complaint(db, latitude, longitude, accuracy, altitude, coordinates, d
         detail=detail,
         is_confirmed=False,
         tag=tag,
-        admin_id=admin_id,
+        admin_id=uuid4(),
     )
     db.add(row)
     db.commit()
