@@ -481,6 +481,7 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
         saved_complaints = []
         
         for response in responses:
+            print(F"response : {response}")
             image_url = response.get("image_url")
             if image_url:
                 # BedRock 응답에서 실제 URL 추출
@@ -503,19 +504,20 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                         }
                         final_results.append(final_result)
                         
-                        # DB에 민원 저장 (db가 제공된 경우)
-                        if db and gps_data:
+                        # DB에 민원 저장 (db가 제공된 경우): GPS 없으면 None으로 저장
+                        if db:
                             try:
-                                latitude = gps_data.get("latitude_decimal")
-                                longitude = gps_data.get("longitude_decimal")
-                                altitude = gps_data.get("altitude")
-                                direction = gps_data.get("direction")
-                                timestamp = gps_data.get("timestamp")
-                                
+                                latitude = gps_data.get("latitude_decimal") if gps_data else None
+                                longitude = gps_data.get("longitude_decimal") if gps_data else None
+                                altitude = gps_data.get("altitude") if gps_data else None
+                                direction = gps_data.get("direction") if gps_data else None
+                                # GPS 타임스탬프는 포맷이 다를 수 있어 일단 None 처리
+                                timestamp = None
+
                                 complaint_result = insert_complaint(
-                                    db, latitude, longitude, 0, altitude, 0, 
-                                    direction, timestamp, image_url, 
-                                    response.get("danger"), response.get("solution"), 
+                                    db, latitude, longitude, 0, altitude, 0,
+                                    direction, timestamp, image_url,
+                                    response.get("danger"), response.get("solution"),
                                     response.get("detail"),
                                     image_data["tag"]
                                 )
