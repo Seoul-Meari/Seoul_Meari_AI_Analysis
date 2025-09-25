@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from fastapi import Depends
 from sqlalchemy import text
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -20,6 +21,18 @@ def health_db(db: Session = Depends(get_db)):
         return {"ok": True, "db": "connected"}
     except Exception as e:
         return {"ok": False, "db": "error", "error": str(e)}
+
+@router.get("/health/s3")
+def health_s3():
+    try:
+        from app.services.analysis_service import s3_client
+        # 지정된 버킷에서 객체 1개 조회 시도
+        bucket = settings.S3_BUCKET_NAME
+        resp = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)
+        count = resp.get("KeyCount", 0)
+        return {"ok": True, "s3": "connected", "bucket": bucket, "keyCount": count}
+    except Exception as e:
+        return {"ok": False, "s3": "error", "error": str(e)}
 
 @router.get("/image-metadata", response_model=ImageMetadataResponse)
 def get_image_metadata(image_url: str):
