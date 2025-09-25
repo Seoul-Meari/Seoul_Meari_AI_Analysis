@@ -329,10 +329,19 @@ def get_image_metadata_from_url(image_url: str):
             "error": f"이미지 처리 오류: {str(e)}"
         }
 
-def analyze_image(image_urls: list, save_location: bool = True, db: Session = None):
+def analyze_image(image_urls: list, save_location: bool = True, image_key_list: list | None = None, db: Session = None):
     # 이미지 메타데이터 추출 (URL과 1대1 매핑)
     image_data_list = []
     image_urls_list = []
+    # image_key_list 형식: "<url> : <key>" → 빠른 조회용 맵 구성
+    url_to_key = {}
+    try:
+        for pair in image_key_list or []:
+            if isinstance(pair, str) and " : " in pair:
+                url_part, key_part = pair.split(" : ", 1)
+                url_to_key[url_part.strip()] = key_part.strip()
+    except Exception:
+        pass
     for image_url in image_urls:
         # 입력이 "태그 : URL" 형식일 수 있으므로 실제 URL과 태그를 분리
         original_input = image_url
@@ -490,6 +499,7 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                 # 해당 URL의 이미지 데이터 찾기
                 for image_data in image_data_list:
                     if image_data["url"] == actual_url:
+                        s3_key = url_to_key.get(actual_url)
                         # GPS 데이터 안전하게 추출
                         gps_data = image_data.get("gps_data")
                         
@@ -500,7 +510,8 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
                             "danger": response.get("danger"),
                             "solution": response.get("solution"),
                             "gps_data": gps_data,
-                            "metadata": image_data.get("metadata")
+                            "metadata": image_data.get("metadata"),
+                            "s3_key": s3_key
                         }
                         final_results.append(final_result)
                         
@@ -567,10 +578,10 @@ def batch_analyze_images(limit: int = 50, prefix: str = "", start_key: str = Non
         
         # URL 리스트 추출
         image_url_list = [img["url"] for img in image_urls]
-        
+        image_key_list = [f"{img['url']} : {img['key']}" for img in image_urls]
         # 배치 분석 실행
         print(f"image_url_list: {image_url_list}")
-        analysis_result = analyze_image(image_url_list, save_location, db)
+        analysis_result = analyze_image(image_url_list, save_location, image_key_list, db)
         
         # S3 정보를 결과에 추가
         if analysis_result.get("success") and "results" in analysis_result:
