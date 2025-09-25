@@ -339,7 +339,12 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         for pair in image_key_list or []:
             if isinstance(pair, str) and " : " in pair:
                 url_part, key_part = pair.split(" : ", 1)
-                url_to_key[url_part.strip()] = key_part.strip()
+                url_part = url_part.strip()
+                key_part = key_part.strip()
+                # url_part가 "tag : <url>" 형식일 수 있으므로 실제 URL로 보정
+                if " : " in url_part and url_part.split(": ", 1)[1].startswith("http"):
+                    url_part = url_part.split(": ", 1)[1]
+                url_to_key[url_part] = key_part
     except Exception:
         pass
     for image_url in image_urls:
