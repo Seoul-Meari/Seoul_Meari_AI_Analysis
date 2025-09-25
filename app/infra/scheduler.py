@@ -27,8 +27,8 @@ def batch_analyze_job():
             date_prefix = now.strftime("upload_image/%Y%m%d")
             
             # 키 범위 설정 (UTC 보정: 9시간 감소)
-            adj_one_hour_ago = one_hour_ago - timedelta(hours=12)
-            adj_now = now - timedelta(hours=12)
+            adj_one_hour_ago = one_hour_ago - timedelta(hours=9)
+            adj_now = now - timedelta(hours=9)
             start_key = adj_one_hour_ago.strftime("%H%M%S")
             end_key = adj_now.strftime("%H%M%S")
             
