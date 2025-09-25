@@ -40,7 +40,7 @@ def health_bedrock():
         import boto3
         # Bedrock 제어 플레인 호출(무료, 경량)
         bedrock_cp = boto3.client("bedrock", region_name=settings.AWS_BEDROCK_REGION)
-        resp = bedrock_cp.list_foundation_models(MaxResults=1)
+        resp = bedrock_cp.list_foundation_models()
         models = resp.get("modelSummaries", [])
         return {"ok": True, "bedrock": "connected", "region": settings.AWS_BEDROCK_REGION, "sampleCount": len(models)}
     except Exception as e:
