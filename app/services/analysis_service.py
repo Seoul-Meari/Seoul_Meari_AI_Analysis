@@ -527,7 +527,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 
                                 complaint_result = insert_complaint(
                                     db, latitude, longitude, 0, altitude, 0,
-                                    direction, timestamp, image_url,
+                                    direction, timestamp, s3_key,
                                     response.get("danger"), response.get("solution"),
                                     response.get("detail"),
                                     image_data["tag"]
