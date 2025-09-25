@@ -581,6 +581,7 @@ def batch_analyze_images(limit: int = 50, prefix: str = "", start_key: str = Non
         image_key_list = [f"{img['url']} : {img['key']}" for img in image_urls]
         # 배치 분석 실행
         print(f"image_url_list: {image_url_list}")
+        print(f"image_key_list: {image_key_list}")
         analysis_result = analyze_image(image_url_list, save_location, image_key_list, db)
         
         # S3 정보를 결과에 추가
