@@ -385,16 +385,18 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
     # 위치 데이터가 있고 저장 옵션이 활성화된 경우 저장
     location_saved = None
     image_urls_list_text = "\n".join(image_urls_list)
-    print(f"image_urls_list_text: {image_urls_list_text}")
+    print(f"image_urls_list_text length: {len(image_urls_list_text)}")
     # AI 이미지 분석
-    resp = bedrock_client.converse(
-        modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
-        messages=[
-            {
-                "role": "user",
-                "content":[
-                    {
-                        "text": f"""너는 도시 환경 데이터용 자동 민원 생성기다. 
+    try:
+        print("Calling Bedrock converse...")
+        resp = bedrock_client.converse(
+            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            messages=[
+                {
+                    "role": "user",
+                    "content":[
+                        {
+                            "text": f"""너는 도시 환경 데이터용 자동 민원 생성기다. 
 목표: 이미지들의 태그를 참조해서 url을 분석하고 자세한설명, 위험도, 해결방법을 알려줘.
 결과물은 입력된 순서대로 순차적으로 출력해. 입력은 태그 : url과 같은 형식으로 입력돼
 출력할때는 태그 정보는 빼고 url만 출력해
@@ -427,12 +429,22 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
         "solution": "해당 민원에 대한 권장조치"
     }}
 ]"""
-                    }
-                ]
-            },
-        ],
-    )
-    print(resp)
+                        }
+                    ]
+                },
+            ],
+        )
+        print("Bedrock converse done")
+        print(resp)
+    except Exception as e:
+        import traceback
+        print(f"Bedrock converse error: {e}")
+        traceback.print_exc()
+        return {
+            "type": "error",
+            "message": f"BedRock 호출 오류: {str(e)}",
+            "metadata": metadata
+        }
     # BedRock 응답에서 텍스트 추출
     try:
         out_blocks = resp["output"]["message"]["content"]
