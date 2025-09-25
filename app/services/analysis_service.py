@@ -57,7 +57,7 @@ def get_s3_image_urls(limit: int = 50, prefix: str = "", start_key: str = None, 
                 if key.endswith('/'):
                     continue
                 
-                # 키에서 시간 부분만 추출 (upload_image/20250916/001240_객체태그_고유이름.png -> 001240)
+                # 키에서 시간 부분만 추출 (upload_image/20250916/001240_객체태그_SLD_고유이름.jpg -> 001240)
                 key_parts = key.split('/')
                 # print(f"key_parts : {key_parts}")
                 

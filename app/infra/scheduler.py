@@ -26,9 +26,11 @@ def batch_analyze_job():
             # 디렉터리 prefix (날짜만)
             date_prefix = now.strftime("upload_image/%Y%m%d")
             
-            # 키 범위 설정
-            start_key = one_hour_ago.strftime("%H%M%S")
-            end_key = now.strftime("%H%M%S")
+            # 키 범위 설정 (UTC 보정: 9시간 감소)
+            adj_one_hour_ago = one_hour_ago - timedelta(hours=9)
+            adj_now = now - timedelta(hours=9)
+            start_key = adj_one_hour_ago.strftime("%H%M%S")
+            end_key = adj_now.strftime("%H%M%S")
             
             print(f"분석 범위: {date_prefix}/ ({start_key} ~ {end_key})")
             result = analysis_service.batch_analyze_images(limit=50, prefix=date_prefix, start_key=start_key, end_key=end_key, save_location=True, db=db)
