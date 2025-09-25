@@ -390,7 +390,7 @@ def analyze_image(image_urls: list, save_location: bool = True, db: Session = No
     try:
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
-            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            modelId="anthropic.claude-3-5-haiku-20241022-v1:0",
             messages=[
                 {
                     "role": "user",
