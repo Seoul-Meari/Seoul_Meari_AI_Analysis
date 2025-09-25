@@ -10,6 +10,7 @@ from app.models.complaints import insert_complaint
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from fastapi import Depends
+from urllib.parse import urlparse, unquote
 
 #BedRock Client 생성
 bedrock_client = boto3.client(
@@ -505,6 +506,14 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
                 for image_data in image_data_list:
                     if image_data["url"] == actual_url:
                         s3_key = url_to_key.get(actual_url)
+                        if not s3_key and actual_url:
+                            try:
+                                # presigned URL에서 S3 key 추출
+                                parsed = urlparse(actual_url)
+                                # parsed.path는 "/upload_image/..." 형태이므로 선행 '/' 제거 후 디코딩
+                                s3_key = unquote(parsed.path.lstrip('/')) or None
+                            except Exception:
+                                s3_key = None
                         # GPS 데이터 안전하게 추출
                         gps_data = image_data.get("gps_data")
                         
