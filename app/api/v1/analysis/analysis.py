@@ -34,6 +34,18 @@ def health_s3():
     except Exception as e:
         return {"ok": False, "s3": "error", "error": str(e)}
 
+@router.get("/health/bedrock")
+def health_bedrock():
+    try:
+        import boto3
+        # Bedrock 제어 플레인 호출(무료, 경량)
+        bedrock_cp = boto3.client("bedrock", region_name=settings.AWS_BEDROCK_REGION)
+        resp = bedrock_cp.list_foundation_models(MaxResults=1)
+        models = resp.get("modelSummaries", [])
+        return {"ok": True, "bedrock": "connected", "region": settings.AWS_BEDROCK_REGION, "sampleCount": len(models)}
+    except Exception as e:
+        return {"ok": False, "bedrock": "error", "error": str(e)}
+
 @router.get("/image-metadata", response_model=ImageMetadataResponse)
 def get_image_metadata(image_url: str):
     result = analysis_service.get_image_metadata_from_url(image_url)
