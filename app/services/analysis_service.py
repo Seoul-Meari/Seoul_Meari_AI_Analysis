@@ -412,7 +412,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     try:
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
-            modelId="amazon.nova-micro-v1:0",
+            modelId="amazon.nova-lite-v1:0",
             messages=[
                 {
                     "role": "user",
@@ -427,13 +427,11 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 {image_urls_list_text}
 
 판별 규칙(요지):
-- '쓰레기봉투'는 내용물이 든 봉투형 포장(비닐/플라스틱)이 바닥/길가/전봇대 주변 등에 놓인 상태를 말합니다.
-- 합법 배출 요소(예: 공식 스티커, 지정된 수거함/배출장소 내부)는 무단투기에서 제외합니다.
-- 혼동 주의: 쇼핑백, 비닐 포장, 의류 가방, 검은 그림자/반사, 개 배설물 봉투 디스펜서, 건축 폐포 자루 등.
-- 포트홀은 도로 주변에 있는 포트홀을 말합니다.
-- danger에는 해당 민원에 대한 시민들에게 위험성을 말한다
-- solution에는 해당 민원에 대한 시청 차원에서의 권장조치를 말한다.
-- detail에는 해당 민원에 대한 상세 설명을 말한다.
+- 태그 sld는 페트병이나 캔 같은 단단한 쓰레기 종류를 말해
+- 태그 slp는 비닐봉투, 종이 같은 형태가 일정하지 않은 쓰레기 종류를 말해 
+- danger에는 해당 민원에 대한 시민들에게 위험성을 말해줘
+- solution에는 해당 민원에 대한 시청 차원에서의 권장조치를 말해줘
+- detail에는 해당 민원에 대한 상세 설명을 말해줘
 
 응답 형식:
 - 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 해.
@@ -445,10 +443,10 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         "solution": "해당 지역에 정기적인 방문 및 점검이 필요"
     }},
     {{
-        "image_url": "포트홀이 있는 이미지 url",
-        "detail": "도로위에 포트홀이 발견되었습니다.",
+        "image_url": "페트병이 있는 이미지 url",
+        "detail": "도로위에 페트병이 발견되었습니다.",
         "danger": "차들이 운행 중 손상을 입을 수 있습니다.",
-        "solution": "해당 도로의 보수공사가 필요합니다."
+        "solution": "해당 페트병의 빠른 조치가 필요합니다"
     }}
 ]"""
                         }
