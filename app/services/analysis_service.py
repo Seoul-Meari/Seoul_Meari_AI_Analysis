@@ -490,8 +490,15 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         }
     
     try:
-        # JSON 배열로 파싱
-        responses = json.loads(response_text)
+        # JSON 배열로 파싱 (안전 파싱: 첫 '[' 부터 마지막 ']' 까지만 파싱)
+        print("about to parse JSON...")
+        start_idx = response_text.find('[')
+        end_idx = response_text.rfind(']')
+        if start_idx == -1 or end_idx == -1 or end_idx < start_idx:
+            raise json.JSONDecodeError("No JSON array brackets found", response_text, 0)
+        safe_text = response_text[start_idx:end_idx+1]
+        responses = json.loads(safe_text)
+        print(f"parsed responses count: {len(responses) if isinstance(responses, list) else 'N/A'}")
         print(f"parsed responses count: {len(responses) if isinstance(responses, list) else 'N/A'}")
         
         # 결과를 저장할 리스트
