@@ -11,11 +11,20 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from fastapi import Depends
 from urllib.parse import urlparse, unquote
+from typing import Optional
 
-#BedRock Client 생성
+#BedRock Client 생성 (타임아웃/재시도 설정)
 bedrock_client = boto3.client(
     'bedrock-runtime',
-    region_name=settings.AWS_BEDROCK_REGION
+    region_name=settings.AWS_BEDROCK_REGION,
+    config=Config(
+        connect_timeout=10,
+        read_timeout=360,
+        retries={
+            'max_attempts': 3,
+            'mode': 'standard'
+        }
+    )
 )
 
 # IAM Role을 사용하여 S3 클라이언트 생성
@@ -305,6 +314,15 @@ def get_image_metadata_from_url(image_url: str):
                         exif_info[tag] = str(value)
                 metadata["exif_info"] = exif_info
         
+        # XMP(임베디드)에서 GPS 추출 시도 (EXIF에 없을 때)
+        if "gps" not in metadata:
+            try:
+                xmp_gps = extract_gps_from_xmp(response.content)
+                if xmp_gps:
+                    metadata["gps"] = xmp_gps
+            except Exception as _:
+                pass
+
         # HTTP 헤더 정보
         metadata["http_headers"] = {
             "content_type": response.headers.get('content-type'),
@@ -329,6 +347,40 @@ def get_image_metadata_from_url(image_url: str):
             "success": False,
             "error": f"이미지 처리 오류: {str(e)}"
         }
+
+def extract_gps_from_xmp(image_bytes: bytes) -> Optional[dict]:
+    """XMP 패킷 내 exif:GPSLatitude / exif:GPSLongitude를 파싱해 십진수로 반환.
+    - 기대 형식: <exif:GPSLatitude>37.12345</exif:GPSLatitude>
+                 <exif:GPSLongitude>127.12345</exif:GPSLongitude>
+    """
+    try:
+        # XMP 패킷 추출: JPEG의 경우 전체 바이트에서 직접 검색
+        text = None
+        try:
+            text = image_bytes.decode('utf-8', errors='ignore')
+        except Exception:
+            return None
+        # 간단한 정규식으로 태그 추출
+        lat_match = re.search(r"<\s*exif:GPSLatitude\s*>\s*([^<]+)\s*<\s*/\s*exif:GPSLatitude\s*>", text, re.IGNORECASE)
+        lon_match = re.search(r"<\s*exif:GPSLongitude\s*>\s*([^<]+)\s*<\s*/\s*exif:GPSLongitude\s*>", text, re.IGNORECASE)
+        if not lat_match or not lon_match:
+            return None
+        def to_float(value: str) -> Optional[float]:
+            try:
+                return float(value.strip())
+            except Exception:
+                return None
+        lat = to_float(lat_match.group(1))
+        lon = to_float(lon_match.group(1))
+        if lat is None or lon is None:
+            return None
+        return {
+            "latitude_decimal": lat,
+            "longitude_decimal": lon,
+            "coordinates": f"{lat:.6f}, {lon:.6f}"
+        }
+    except Exception:
+        return None
 
 def analyze_image(image_urls: list, save_location: bool = True, image_key_list: list | None = None, db: Session = None):
     # 이미지 메타데이터 추출 (URL과 1대1 매핑)
@@ -412,7 +464,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     try:
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
-            modelId="amazon.nova-lite-v1:0",
+            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
             inferenceConfig={
                 "maxTokens": 4000,
                 "temperature": 0.3
@@ -439,6 +491,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 
 응답 형식(예시):
 - 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 해.
+- 만약 이미지 URL이 여러개 들어오면 여러개를 만들어서 넣어줘
 [
     {{
         "image_url": "쓰레기 봉투가 있는 이미지 url",
@@ -449,7 +502,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     {{
         "image_url": "페트병이 있는 이미지 url",
         "detail": "도로위에 페트병이 발견되었습니다.",
-        "danger": "차들이 운행 중 손상을 입을 수 있습니다.",
+        "danger": "해당 데이터에 대한 위험도",
         "solution": "해당 페트병의 빠른 조치가 필요합니다"
     }}
 ]"""
