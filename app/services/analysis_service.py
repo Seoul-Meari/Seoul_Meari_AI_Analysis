@@ -412,7 +412,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     try:
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
-            modelId="amazon.nova-lite-v1:0",
+            modelId="amazon.nova-micro-v1:0",
             messages=[
                 {
                     "role": "user",
@@ -433,7 +433,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 - solution에는 해당 민원에 대한 시청 차원에서의 권장조치를 말해줘
 - detail에는 해당 민원에 대한 상세 설명을 말해줘
 
-응답 형식:
+응답 형식(예시):
 - 반드시 'JSON 배열만' 출력합니다. [로 시작해서 ]로 끝나야 해.
 [
     {{
