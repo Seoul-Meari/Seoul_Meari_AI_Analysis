@@ -413,6 +413,10 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
             modelId="amazon.nova-lite-v1:0",
+            inferenceConfig={
+                "maxTokens": 4000,
+                "temperature": 0.3
+            },
             messages=[
                 {
                     "role": "user",
