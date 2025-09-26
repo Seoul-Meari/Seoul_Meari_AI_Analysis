@@ -418,10 +418,10 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
                     "role": "user",
                     "content":[
                         {
-                            "text": f"""너는 도시 환경 데이터용 자동 민원 생성기다. 
+                            "text": f"""너는 도시 환경 데이터용 자동 민원 생성기야.
 목표: 이미지들의 태그를 참조해서 url을 분석하고 자세한설명, 위험도, 해결방법을 알려줘.
 결과물은 입력된 순서대로 순차적으로 출력해. 입력은 태그 : url과 같은 형식으로 입력돼
-출력할때는 태그 정보는 빼고 url만 출력해
+출력할때는 태그 정보는 빼고 url만 출력해.
 
 분석할 이미지 목록:
 {image_urls_list_text}
@@ -431,8 +431,8 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 - 합법 배출 요소(예: 공식 스티커, 지정된 수거함/배출장소 내부)는 무단투기에서 제외합니다.
 - 혼동 주의: 쇼핑백, 비닐 포장, 의류 가방, 검은 그림자/반사, 개 배설물 봉투 디스펜서, 건축 폐포 자루 등.
 - 포트홀은 도로 주변에 있는 포트홀을 말합니다.
-- danger에는 해당 민원에 대한 위험성을 말한다
-- solution에는 해당 민원에 대한 권장조치를 말한다.
+- danger에는 해당 민원에 대한 시민들에게 위험성을 말한다
+- solution에는 해당 민원에 대한 시청 차원에서의 권장조치를 말한다.
 - detail에는 해당 민원에 대한 상세 설명을 말한다.
 
 응답 형식:
@@ -440,15 +440,15 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
 [
     {{
         "image_url": "쓰레기 봉투가 있는 이미지 url",
-        "detail": "해당 민원에 대한 상세 설명",
-        "danger": "해당 민원에 대한 위험성",
-        "solution": "해당 민원에 대한 권장조치"
+        "detail": "현재 쓰레기 봉투가 인도에 방치된 상황입니다.",
+        "danger": "미관상 보기 좋지 않음",
+        "solution": "해당 지역에 정기적인 방문 및 점검이 필요"
     }},
     {{
         "image_url": "포트홀이 있는 이미지 url",
-        "detail": "해당 민원에 대한 상세 설명",
-        "danger": "해당 민원에 대한 위험성",
-        "solution": "해당 민원에 대한 권장조치"
+        "detail": "도로위에 포트홀이 발견되었습니다.",
+        "danger": "차들이 운행 중 손상을 입을 수 있습니다.",
+        "solution": "해당 도로의 보수공사가 필요합니다."
     }}
 ]"""
                         }
