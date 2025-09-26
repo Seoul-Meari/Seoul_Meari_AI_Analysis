@@ -412,7 +412,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     try:
         print("Calling Bedrock converse...")
         resp = bedrock_client.converse(
-            modelId="amazon.nova-micro-v1:0",
+            modelId="amazon.nova-lite-v1:0",
             messages=[
                 {
                     "role": "user",
@@ -467,8 +467,10 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         }
     # BedRock 응답에서 텍스트 추출
     try:
+        print("Parsing Bedrock response...")
         out_blocks = resp["output"]["message"]["content"]
         response_text = "".join(block["text"] for block in out_blocks if "text" in block)
+        print(f"raw response_text length: {len(response_text)}")
     except (KeyError, IndexError) as e:
         return {
             "type": "error",
@@ -478,6 +480,8 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     
     # response에서 ```json 또는 ```로 시작하는 부분과 ```로 끝나는 부분을 모두 제거
     response_text = re.sub(r"^```json\s*|^```\s*|```$", "", response_text, flags=re.MULTILINE)
+    print(f"cleaned response_text length: {len(response_text)}")
+    print(f"cleaned response_text head: {response_text[:300]}")
     if not response_text:
         return {
             "type": "error",
@@ -488,17 +492,19 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
     try:
         # JSON 배열로 파싱
         responses = json.loads(response_text)
+        print(f"parsed responses count: {len(responses) if isinstance(responses, list) else 'N/A'}")
         
         # 결과를 저장할 리스트
         final_results = []
         saved_complaints = []
         
         for response in responses:
-            print(F"response : {response}")
+            print(F"response item keys: {list(response.keys())}")
             image_url = response.get("image_url")
             if image_url:
                 # BedRock 응답에서 실제 URL 추출
                 actual_url = image_url.split(" : ", 1)[1] if " : " in image_url else image_url
+                print(f"actual_url: {actual_url}")
                 
                 # 해당 URL의 이미지 데이터 찾기
                 for image_data in image_data_list:
@@ -512,6 +518,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
                                 s3_key = unquote(parsed.path.lstrip('/')) or None
                             except Exception:
                                 s3_key = None
+                        print(f"matched url. s3_key={s3_key}")
                         # GPS 데이터 안전하게 추출
                         gps_data = image_data.get("gps_data")
                         
@@ -536,7 +543,7 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
                                 direction = gps_data.get("direction") if gps_data else None
                                 # GPS 타임스탬프는 포맷이 다를 수 있어 일단 None 처리
                                 timestamp = None
-
+                                print(f"inserting complaint with key={s3_key}")
                                 complaint_result = insert_complaint(
                                     db, latitude, longitude, 0, altitude, 0,
                                     direction, timestamp, s3_key,
@@ -545,11 +552,14 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
                                     image_data["tag"]
                                 )
                                 saved_complaints.append(complaint_result)
+                                print("inserted complaint id:", complaint_result.complaint_id)
                             except Exception as e:
                                 print(f"민원 저장 오류: {e}")
                         break
+                else:
+                    print("no match in image_data_list for:", actual_url)
         
-        return {
+        result_payload = {
             "success": True,
             "results": final_results,
             "total_count": len(image_data_list),
@@ -557,6 +567,8 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
             "saved_complaints": len(saved_complaints),
             "metadata": metadata
         }
+        print("analysis summary:", {k: result_payload[k] for k in ["total_count","detected_count","saved_complaints"]})
+        return result_payload
             
     except json.JSONDecodeError as e:
         # JSON 파싱 실패 시 기본 응답 반환
