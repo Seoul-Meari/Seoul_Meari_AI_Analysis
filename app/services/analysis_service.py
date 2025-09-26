@@ -578,7 +578,9 @@ def analyze_image(image_urls: list, save_location: bool = True, image_key_list: 
         return result_payload
             
     except json.JSONDecodeError as e:
-        # JSON 파싱 실패 시 기본 응답 반환
+        # JSON 파싱 실패 시 상세 로그 후 기본 응답 반환
+        print(f"JSON 파싱 오류: {e}")
+        print("response_text preview:", response_text[:500])
         return {
             "type": "error",
             "message": f"JSON 파싱 오류: {str(e)}",
