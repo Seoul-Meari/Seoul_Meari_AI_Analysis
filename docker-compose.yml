@@ -10,6 +10,9 @@ services:
     volumes:
       - ./app:/app/app        # 코드 변경 -> 즉시 반영(--reload)
       - ./requirements.txt:/app/requirements.txt
+      - ~/.aws:/root/.aws:ro  # AWS 자격 증명 마운트 (읽기 전용)
     env_file:
       - .env
+    environment:
+      - AWS_SDK_LOAD_CONFIG=1
     restart: unless-stopped
